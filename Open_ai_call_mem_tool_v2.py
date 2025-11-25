@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
 from openai import OpenAI
 from urllib.parse import quote
-
+import yfinance as yf
 # Load environment variables from .env file
 load_dotenv()
 
@@ -47,7 +47,16 @@ class OpenAIClientWithMemoryAndTools:
                 
         except Exception as e:
             return f"❌ Error fetching weather for {city}: {str(e)}"
-    
+
+    def get_stock(self,symbol: str) -> str:
+        t = yf.Ticker(symbol)
+        info = t.fast_info  # fast_info is lightweight and fast
+        price = info.get("lastPrice") or info.get("last_close") or info.get("last_price")
+        prev_close = info.get("previous_close")
+        currency = info.get("currency")
+        name = t.info.get("shortName") if hasattr(t, "info") else symbol.upper()
+        return f"{name} ({symbol.upper()}): {price} {currency}, Prev close: {prev_close}"    
+
     def chat_completion_with_tools(self, 
                                   user_message: str, 
                                   system_message: Optional[str] = None,
@@ -85,6 +94,23 @@ class OpenAIClientWithMemoryAndTools:
                             }
                         },
                         "required": ["city"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_stock",
+                    "description": "Get real-time stock quote information for a symbol (ticker). Example: 'AAPL', 'TCS.NS', 'RELIANCE.NS'. Uses Yahoo Finance public quote endpoint.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "The stock ticker symbol to query (e.g., 'AAPL' or 'TCS.NS')"
+                            }
+                        },
+                        "required": ["symbol"]
                     }
                 }
             }
@@ -131,6 +157,17 @@ class OpenAIClientWithMemoryAndTools:
                             "tool_call_id": tool_call.id,
                             "content": tool_result
                         })
+                    elif tool_call.function.name == "get_stock":
+                        # Parse the arguments
+                        arguments = json.loads(tool_call.function.arguments)
+                        symbol = arguments.get("symbol", "Unknown")
+                        
+                        # Call the tool
+                        tool_result = self.get_stock(symbol)
+                        tool_results.append({
+                            "tool_call_id": tool_call.id,
+                            "content": tool_result
+                        })                
                 print("="*100)
                 print("Tool Results:", tool_results)
                 print("="*100)                
