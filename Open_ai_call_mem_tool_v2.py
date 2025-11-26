@@ -7,13 +7,16 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from urllib.parse import quote
 import yfinance as yf
+from tools import Tools
+
 # Load environment variables from .env file
 load_dotenv()
-
 
 class OpenAIClientWithMemoryAndTools:
     
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4.1-nano"):
+        self.tools = Tools()
+
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
@@ -113,7 +116,23 @@ class OpenAIClientWithMemoryAndTools:
                         "required": ["symbol"]
                     }
                 }
-            }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "schedule_whatsapp",
+                    "description": "Schedule a WhatsApp message after delay (in hours)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "to_number": {"type": "string"},
+                            "message": {"type": "string"},
+                            "delay_hours": {"type": "number"}
+                        },
+                        "required": ["to_number","message","delay_hours"]
+                    }
+                }
+         }
         ]
         
         try:
@@ -167,7 +186,19 @@ class OpenAIClientWithMemoryAndTools:
                         tool_results.append({
                             "tool_call_id": tool_call.id,
                             "content": tool_result
-                        })                
+                        })
+                    elif tool_call.function.name == "schedule_whatsapp":
+                        arguments = json.loads(tool_call.function.arguments)
+                        to_number = arguments["to_number"]
+                        message = arguments["message"]
+                        delay_hours = arguments["delay_hours"]
+
+                        tool_result = self.tools.schedule_whatsapp(to_number, message, delay_hours)
+
+                        tool_results.append({
+                            "tool_call_id": tool_call.id,
+                            "content": tool_result
+                        })            
                 print("="*100)
                 print("Tool Results:", tool_results)
                 print("="*100)                
